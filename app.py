@@ -23,16 +23,30 @@ def upload_file():
     if not file:
         return jsonify({"error": "No file provided"}), 400
     try:
-        # We can still use pandas to load the data initially
+        # Use pandas to load the data from the uploaded file stream
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file.stream)
         elif file.filename.endswith(('.xls', '.xlsx')):
             df = pd.read_excel(file.stream)
         else:
             return jsonify({"error": "Unsupported file type"}), 400
-            
+
         dataframes['current'] = df
-        return jsonify({"message": "File uploaded successfully"}), 200
+
+        # Prepare the data profile to send back to the frontend
+        profile = {
+            "rows": len(df),
+            "columns": len(df.columns),
+            "missing_values_pct": round((df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100, 2)
+        }
+
+        # Send back the success message, the data preview, and the profile
+        return jsonify({
+            "message": "File uploaded successfully",
+            "preview": df.head(50).to_json(orient='split'),
+            "profile": profile
+        }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -72,4 +86,5 @@ def download_file():
 if __name__ == '__main__':
 
     app.run(debug=True)
+
 
