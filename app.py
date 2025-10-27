@@ -1,18 +1,19 @@
-# File: app.py
-# This version imports and uses the REAL data-purifier library from PyPI
-
+# File: app.py - Hardened Version
+import json
+import io
+import pandas as pd
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-import pandas as pd
-import io
-import datapurifier as purifier # <-- Importing the REAL data-purifier library
+import datapurifier as purifier
 
 app = Flask(__name__)
+
 # This allows your app to accept requests from ANY domain.
-# It's secure enough for this project and solves the changing URL problem.
 CORS(app, origins="*")
 
-# This will hold the user's data while they work
+# WARNING: This simple in-memory storage is NOT multi-user safe.
+# If two people use the app at once, they will overwrite each other's data.
+# This is okay for a personal tool, but not for a public website.
 dataframes = {'current': None}
 
 @app.route('/upload', methods=['POST'])
@@ -21,7 +22,6 @@ def upload_file():
     if not file:
         return jsonify({"error": "No file provided"}), 400
     try:
-        # Use pandas to load the data from the uploaded file stream
         if file.filename.endswith('.csv'):
             df = pd.read_csv(file.stream)
         elif file.filename.endswith(('.xls', '.xlsx')):
@@ -31,17 +31,20 @@ def upload_file():
 
         dataframes['current'] = df
 
-        # Prepare the data profile to send back to the frontend
+        # BUG FIX: Prevent division by zero if an empty file is uploaded.
+        total_cells = len(df) * len(df.columns)
+        missing_pct = round((df.isnull().sum().sum() / total_cells) * 100, 2) if total_cells > 0 else 0
+
         profile = {
             "rows": len(df),
             "columns": len(df.columns),
-            "missing_values_pct": round((df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100, 2)
+            "missing_values_pct": missing_pct
         }
 
-        # Send back the success message, the data preview, and the profile
+        # Use json.loads with to_json to correctly handle NaN -> null conversion.
         return jsonify({
             "message": "File uploaded successfully",
-            "preview": df.head(50).to_dict(orient='split'),
+            "preview": json.loads(df.head(50).to_json(orient='split')),
             "profile": profile
         }), 200
 
@@ -53,24 +56,24 @@ def clean_data():
     df = dataframes.get('current')
     if df is None:
         return jsonify({"error": "No data loaded."}), 400
+
+    # This is where you will implement the logic to call the purifier
+    # library based on what the user selects in the frontend.
+    # The code below is a placeholder for that future logic.
+    operation = request.json.get('operation')
+    params = request.json.get('params', {})
     
-    # NOTE: You will need to replace the function names below with the
-    # EXACT function names from the data-purifier library's documentation.
-    # The names below are educated guesses.
+    # Example: df = purifier.handle_duplicates(df)
+    message = f"Operation '{operation}' would be applied here."
     
-    try:
-        # Example of how you would call the library's functions
-        df = purifier.handle_duplicates(df, action='remove')
-        df = purifier.handle_missing_values(df, strategy='mean')
-        
-        dataframes['current'] = df
-        
-        return jsonify({
-            "message": "Data cleaned successfully using data-purifier!",
-            "preview": df.head(50).to_json(orient='split')
-        }), 200
-    except Exception as e:
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    dataframes['current'] = df
+
+    # BUG FIX: The original code used .to_json(), which sends a string.
+    # This now correctly sends a JSON object and handles NaN -> null conversion.
+    return jsonify({
+        "message": message,
+        "preview": json.loads(df.head(50).to_json(orient='split'))
+    }), 200
 
 @app.route('/download', methods=['GET'])
 def download_file():
@@ -82,9 +85,4 @@ def download_file():
     return send_file(buffer, as_attachment=True, download_name='cleaned_data.csv', mimetype='text/csv')
 
 if __name__ == '__main__':
-
     app.run(debug=True)
-
-
-
-
