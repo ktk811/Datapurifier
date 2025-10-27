@@ -3,4 +3,6 @@ flask-cors
 pandas
 numpy
 openpyxl
+
 data-purifier
+gunicorn
