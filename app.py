@@ -41,7 +41,7 @@ def upload_file():
         # Send back the success message, the data preview, and the profile
         return jsonify({
             "message": "File uploaded successfully",
-            "preview": df.head(50).to_json(orient='split'),
+            "preview": df.head(50).to_dict(orient='split'),
             "profile": profile
         }), 200
 
@@ -84,6 +84,7 @@ def download_file():
 if __name__ == '__main__':
 
     app.run(debug=True)
+
 
 
 
