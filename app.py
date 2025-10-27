@@ -8,11 +8,9 @@ import io
 import datapurifier as purifier # <-- Importing the REAL data-purifier library
 
 app = Flask(__name__)
-
-# Define the specific URL of your frontend that is allowed to connect
-frontend_url = "https://data-purifier-frontend-hcy1-q20evitxa-ktks-projects-148cd848.vercel.app"
-
-CORS(app, resources={r"/*": {"origins": frontend_url}})
+# This allows your app to accept requests from ANY domain.
+# It's secure enough for this project and solves the changing URL problem.
+CORS(app, origins="*")
 
 # This will hold the user's data while they work
 dataframes = {'current': None}
@@ -86,5 +84,6 @@ def download_file():
 if __name__ == '__main__':
 
     app.run(debug=True)
+
 
 
