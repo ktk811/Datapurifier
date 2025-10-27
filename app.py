@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import pandas as pd
 import io
-import data_purifier as purifier # <-- Importing the REAL data-purifier library
+import datapurifier as purifier # <-- Importing the REAL data-purifier library
 
 app = Flask(__name__)
 CORS(app)
@@ -66,4 +66,5 @@ def download_file():
     return send_file(buffer, as_attachment=True, download_name='cleaned_data.csv', mimetype='text/csv')
 
 if __name__ == '__main__':
+
     app.run(debug=True)
