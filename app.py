@@ -1,96 +1,117 @@
-# --- Add these lines to the top to fix the import path ---
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-# ---------------------------------------------------------
-
-from flask import Flask, request, render_template, jsonify
-import numpy as np
-import pandas as pd
+# File: app.py - Final, Complete Version
 import json
+import io
+import pandas as pd
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+import datapurifier as purifier
 
-# This import should now work correctly on the server because the root is on the path
-from pipeline.predict_pipeline import CustomData, PredictPipeline
+app = Flask(__name__)
 
-# Create the Flask app instance
-application = Flask(__name__)
-app = application
+# This allows your app to accept requests from ANY domain, solving CORS issues.
+CORS(app, origins="*")
 
-# This dictionary will store the DataFrame in memory
+# WARNING: This simple storage is not multi-user safe.
+# If two people use the app at once, they will overwrite each other's data.
 dataframes = {'current': None}
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    file = request.files.get('file')
+    if not file:
+        return jsonify({"error": "No file provided"}), 400
+    try:
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file.stream)
+        elif file.filename.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(file.stream)
+        else:
+            return jsonify({"error": "Unsupported file type"}), 400
 
-# Define your routes
-@app.route('/')
-def index():
-    return render_template('index.html')
+        dataframes['current'] = df
 
-@app.route('/predictdata', methods=['GET', 'POST'])
-def predict_datapoint():
-    if request.method == 'GET':
-        return render_template('home.html')
-    else:
-        data = CustomData(
-            gender=request.form.get('gender'),
-            race_ethnicity=request.form.get('ethnicity'),
-            parental_level_of_education=request.form.get('parental_level_of_education'),
-            lunch=request.form.get('lunch'),
-            test_preparation_course=request.form.get('test_preparation_course'),
-            reading_score=float(request.form.get('reading_score')),
-            writing_score=float(request.form.get('writing_score'))
-        )
-        pred_df = data.get_data_as_data_frame()
-        print(pred_df)
+        # Build the detailed column information the frontend modal needs
+        column_details = []
+        for col in df.columns:
+            column_details.append({
+                "name": col,
+                "non_null_count": int(df[col].notna().sum()),
+                "dtype": str(df[col].dtype)
+            })
 
-        predict_pipeline = PredictPipeline()
-        results = predict_pipeline.predict(pred_df)
-        
-        return render_template('home.html', results=results[0])
+        total_cells = len(df) * len(df.columns)
+        missing_pct = round((df.isnull().sum().sum() / total_cells) * 100, 2) if total_cells > 0 else 0
+
+        profile = {
+            "rows": len(df),
+            "columns": column_details,  # Send the detailed list for the modal
+            "missing_values_pct": missing_pct
+        }
+
+        # Use json.loads with to_json to correctly handle NaN -> null conversion
+        return jsonify({
+            "message": "File uploaded successfully",
+            "preview": json.loads(df.head(50).to_json(orient='split')),
+            "profile": profile
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/clean', methods=['POST'])
 def clean_data():
-    """Handles data cleaning operations on the currently loaded DataFrame."""
     df = dataframes.get('current')
     if df is None:
-        return jsonify({"error": "No data has been loaded yet."}), 400
+        return jsonify({"error": "No data loaded."}), 400
 
     operation = request.json.get('operation')
     params = request.json.get('params', {})
     
     try:
-        response_data = {}
+        response_data = {} # Prepare a dictionary for our response
+        
+        # NOTE: The function names below are guesses based on your frontend.
+        # You must check the data-purifier library's documentation for the real names.
         if operation == 'remove_duplicates':
             rows_before = len(df)
-            df = df.drop_duplicates(**params)
+            df = purifier.handle_duplicates(df, action='remove') # Assumed function name
             rows_after = len(df)
             response_data['removed_count'] = rows_before - rows_after
-            message = f"{rows_before - rows_after} duplicate rows removed."
-        
+            message = "Duplicate rows removed."
+            
         elif operation == 'handle_missing':
-            strategy = params.pop('strategy', 'drop')
-            if strategy == 'drop':
-                df = df.dropna(**params)
-                message = "Rows with missing values dropped."
-            elif strategy == 'fill':
-                df = df.fillna(**params)
-                message = "Missing values filled."
-            else:
-                raise ValueError("Invalid strategy for handling missing values.")
+            df = purifier.handle_missing_values(df, **params) # Assumed function name
+            message = "Missing values handled."
+            
+        elif operation == 'standardize_text':
+            df = purifier.clean_text(df, **params) # Assumed function name
+            message = "Text standardized."
         
+        elif operation == 'convert_type':
+            df = purifier.convert_data_type(df, **params) # Assumed function name
+            message = "Data type converted."
         else:
             return jsonify({"error": f"Unknown operation: {operation}"}), 400
         
         dataframes['current'] = df
+        
+        # Add the standard data to our response
         response_data['message'] = message
         response_data['preview'] = json.loads(df.head(50).to_json(orient='split'))
         
         return jsonify(response_data), 200
 
     except Exception as e:
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        return jsonify({"error": f"An error occurred during cleaning: {str(e)}"}), 500
 
+@app.route('/download', methods=['GET'])
+def download_file():
+    df = dataframes.get('current')
+    if df is None: return jsonify({"error": "No data available"}), 400
+    buffer = io.BytesIO()
+    df.to_csv(buffer, index=False, encoding='utf-8')
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name='cleaned_data.csv', mimetype='text/csv')
 
-# Run the app if the script is executed directly
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True)
-
+if __name__ == '__main__':
+    app.run(debug=True)
