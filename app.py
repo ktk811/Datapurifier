@@ -1,91 +1,94 @@
-from flask import jsonify, request
+from flask import Flask, request, render_template, jsonify
+import numpy as np
 import pandas as pd
 import json
 
-# Assume 'app' and a 'dataframes' dictionary are defined elsewhere in your file
-# For example:
-# app = Flask(__name__)
-# dataframes = {'current': None}
+# Assuming your CustomData and PredictPipeline are in this path
+from src.pipeline.predict_pipeline import CustomData, PredictPipeline
+
+# 1. Create the Flask app instance FIRST
+application = Flask(__name__)
+app = application  # The deployment server (Gunicorn) looks for this 'app' variable
+
+# This dictionary will store the DataFrame in memory.
+# Note: This is a simple approach for single-worker deployments.
+dataframes = {'current': None}
+
+
+# 2. Now, define your routes using the 'app' variable
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/predictdata', methods=['GET', 'POST'])
+def predict_datapoint():
+    if request.method == 'GET':
+        return render_template('home.html')
+    else:
+        # Code for your student performance prediction
+        data = CustomData(
+            gender=request.form.get('gender'),
+            race_ethnicity=request.form.get('ethnicity'),
+            parental_level_of_education=request.form.get('parental_level_of_education'),
+            lunch=request.form.get('lunch'),
+            test_preparation_course=request.form.get('test_preparation_course'),
+            # Correcting the swapped scores from our previous conversation
+            reading_score=float(request.form.get('reading_score')),
+            writing_score=float(request.form.get('writing_score'))
+        )
+        pred_df = data.get_data_as_data_frame()
+        print(pred_df)
+
+        predict_pipeline = PredictPipeline()
+        results = predict_pipeline.predict(pred_df)
+        
+        return render_template('home.html', results=results[0])
 
 @app.route('/clean', methods=['POST'])
 def clean_data():
-    """
-    Handles various data cleaning operations on the current DataFrame.
-    Accepts a JSON payload with 'operation' and 'params'.
-    """
+    """Handles data cleaning operations on the currently loaded DataFrame."""
     df = dataframes.get('current')
     if df is None:
         return jsonify({"error": "No data has been loaded yet."}), 400
 
-    # Get the operation and parameters from the incoming JSON request
     operation = request.json.get('operation')
     params = request.json.get('params', {})
     
     try:
-        response_data = {}  # Dictionary to hold our JSON response
-
-        # --- OPERATION: Remove Duplicate Rows ---
+        response_data = {}
         if operation == 'remove_duplicates':
             rows_before = len(df)
-            # Use pandas' drop_duplicates(). `params` can include 'subset', 'keep', etc.
             df = df.drop_duplicates(**params)
             rows_after = len(df)
             response_data['removed_count'] = rows_before - rows_after
             message = f"{rows_before - rows_after} duplicate rows removed."
         
-        # --- OPERATION: Handle Missing Values ---
         elif operation == 'handle_missing':
-            strategy = params.pop('strategy', 'drop') # e.g., 'drop', 'fill'
+            strategy = params.pop('strategy', 'drop')
             if strategy == 'drop':
-                # Use pandas' dropna(). `params` can include 'axis', 'how', 'subset', etc.
                 df = df.dropna(**params)
-                message = "Rows with missing values have been dropped."
+                message = "Rows with missing values dropped."
             elif strategy == 'fill':
-                # Use pandas' fillna(). `params` can include 'value', 'method', etc.
                 df = df.fillna(**params)
-                message = "Missing values have been filled."
+                message = "Missing values filled."
             else:
                 raise ValueError("Invalid strategy for handling missing values.")
-
-        # --- OPERATION: Standardize Text Columns ---
-        elif operation == 'standardize_text':
-            column = params.get('column')
-            if not column or column not in df.columns:
-                raise ValueError(f"Column '{column}' not found.")
-            
-            # Apply common text cleaning functions using pandas .str accessor
-            df[column] = df[column].str.lower()
-            df[column] = df[column].str.strip()
-            # You could add more, like removing punctuation: .str.replace(r'[^\w\s]', '')
-            message = f"Text in column '{column}' has been standardized (lowercase, stripped whitespace)."
-
-        # --- OPERATION: Convert Data Type ---
-        elif operation == 'convert_type':
-            column = params.get('column')
-            to_type = params.get('to_type')
-            if not all([column, to_type]) or column not in df.columns:
-                raise ValueError("Both 'column' and 'to_type' parameters are required.")
-
-            # Use pandas' astype() to convert column type
-            if to_type == 'numeric':
-                df[column] = pd.to_numeric(df[column], errors='coerce') # Coerce errors will turn non-numbers into NaN
-            else:
-                df[column] = df[column].astype(to_type)
-            message = f"Data type of column '{column}' converted to {to_type}."
         
+        # Add other operations as needed
         else:
             return jsonify({"error": f"Unknown operation: {operation}"}), 400
         
-        # Update the DataFrame in our server's memory
         dataframes['current'] = df
-        
-        # Prepare the final JSON response
         response_data['message'] = message
-        # Convert the first 50 rows of the DataFrame to JSON for a preview
         response_data['preview'] = json.loads(df.head(50).to_json(orient='split'))
         
         return jsonify(response_data), 200
 
     except Exception as e:
-        # Return a generic error if anything goes wrong
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+# 3. Finally, run the app if the script is executed directly
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", debug=True)
+
