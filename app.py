@@ -1,4 +1,4 @@
-# File: app.py - Hardened Version
+# File: app.py - Final Version with Cleaning Logic
 import json
 import io
 import pandas as pd
@@ -7,13 +7,8 @@ from flask_cors import CORS
 import datapurifier as purifier
 
 app = Flask(__name__)
-
-# This allows your app to accept requests from ANY domain.
 CORS(app, origins="*")
 
-# WARNING: This simple in-memory storage is NOT multi-user safe.
-# If two people use the app at once, they will overwrite each other's data.
-# This is okay for a personal tool, but not for a public website.
 dataframes = {'current': None}
 
 @app.route('/upload', methods=['POST'])
@@ -31,7 +26,6 @@ def upload_file():
 
         dataframes['current'] = df
 
-        # BUG FIX: Prevent division by zero if an empty file is uploaded.
         total_cells = len(df) * len(df.columns)
         missing_pct = round((df.isnull().sum().sum() / total_cells) * 100, 2) if total_cells > 0 else 0
 
@@ -41,7 +35,6 @@ def upload_file():
             "missing_values_pct": missing_pct
         }
 
-        # Use json.loads with to_json to correctly handle NaN -> null conversion.
         return jsonify({
             "message": "File uploaded successfully",
             "preview": json.loads(df.head(50).to_json(orient='split')),
@@ -57,23 +50,39 @@ def clean_data():
     if df is None:
         return jsonify({"error": "No data loaded."}), 400
 
-    # This is where you will implement the logic to call the purifier
-    # library based on what the user selects in the frontend.
-    # The code below is a placeholder for that future logic.
     operation = request.json.get('operation')
-    params = request.json.get('params', {})
-    
-    # Example: df = purifier.handle_duplicates(df)
-    message = f"Operation '{operation}' would be applied here."
-    
-    dataframes['current'] = df
+    # params = request.json.get('params', {}) # For future use if operations need options
 
-    # BUG FIX: The original code used .to_json(), which sends a string.
-    # This now correctly sends a JSON object and handles NaN -> null conversion.
-    return jsonify({
-        "message": message,
-        "preview": json.loads(df.head(50).to_json(orient='split'))
-    }), 200
+    try:
+        # --- THIS IS THE NEW LOGIC ---
+        # We check which operation the frontend requested and call the correct function.
+        # NOTE: The function names like 'purifier.handle_duplicates' are guesses.
+        # You must check the data-purifier library's documentation for the real names.
+        
+        if operation == 'remove_duplicates':
+            df = purifier.handle_duplicates(df, action='remove')
+            message = "Duplicate rows removed."
+        elif operation == 'handle_missing':
+            # This is a guess for a function that fills missing values.
+            df = purifier.handle_missing_values(df, strategy='mean')
+            message = "Missing values handled."
+        elif operation == 'standardize_text':
+             # This is a guess for a text standardization function.
+            df = purifier.clean_text(df, case='lower')
+            message = "Text standardized."
+        else:
+            return jsonify({"error": f"Unknown operation: {operation}"}), 400
+        
+        dataframes['current'] = df
+        
+        return jsonify({
+            "message": message,
+            "preview": json.loads(df.head(50).to_json(orient='split'))
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": f"An error occurred during cleaning: {str(e)}"}), 500
+
 
 @app.route('/download', methods=['GET'])
 def download_file():
