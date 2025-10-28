@@ -10,7 +10,7 @@ import pandas as pd
 import json
 
 # This import should now work correctly on the server because the root is on the path
-from src.pipeline.predict_pipeline import CustomData, PredictPipeline
+from pipeline.predict_pipeline import CustomData, PredictPipeline
 
 # Create the Flask app instance
 application = Flask(__name__)
@@ -93,3 +93,4 @@ def clean_data():
 # Run the app if the script is executed directly
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)
+
