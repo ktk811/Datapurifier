@@ -1,24 +1,26 @@
+# --- Add these lines to the top to fix the import path ---
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# ---------------------------------------------------------
+
 from flask import Flask, request, render_template, jsonify
 import numpy as np
 import pandas as pd
 import json
 
-# Assuming your CustomData and PredictPipeline are in this path
-from pipeline.predict_pipeline import CustomData, PredictPipeline
+# This import should now work correctly on the server because the root is on the path
+from src.pipeline.predict_pipeline import CustomData, PredictPipeline
 
-# 1. Create the Flask app instance FIRST
+# Create the Flask app instance
 application = Flask(__name__)
-app = application  # The deployment server (Gunicorn) looks for this 'app' variable
+app = application
 
-# This dictionary will store the DataFrame in memory.
-# Note: This is a simple approach for single-worker deployments.
+# This dictionary will store the DataFrame in memory
 dataframes = {'current': None}
 
 
-# 2. Now, define your routes using the 'app' variable
+# Define your routes
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -28,14 +30,12 @@ def predict_datapoint():
     if request.method == 'GET':
         return render_template('home.html')
     else:
-        # Code for your student performance prediction
         data = CustomData(
             gender=request.form.get('gender'),
             race_ethnicity=request.form.get('ethnicity'),
             parental_level_of_education=request.form.get('parental_level_of_education'),
             lunch=request.form.get('lunch'),
             test_preparation_course=request.form.get('test_preparation_course'),
-            # Correcting the swapped scores from our previous conversation
             reading_score=float(request.form.get('reading_score')),
             writing_score=float(request.form.get('writing_score'))
         )
@@ -77,7 +77,6 @@ def clean_data():
             else:
                 raise ValueError("Invalid strategy for handling missing values.")
         
-        # Add other operations as needed
         else:
             return jsonify({"error": f"Unknown operation: {operation}"}), 400
         
@@ -91,9 +90,6 @@ def clean_data():
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-# 3. Finally, run the app if the script is executed directly
+# Run the app if the script is executed directly
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)
-
-
-
