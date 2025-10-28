@@ -4,7 +4,7 @@ import pandas as pd
 import json
 
 # Assuming your CustomData and PredictPipeline are in this path
-from src.pipeline.predict_pipeline import CustomData, PredictPipeline
+from pipeline.predict_pipeline import CustomData, PredictPipeline
 
 # 1. Create the Flask app instance FIRST
 application = Flask(__name__)
@@ -91,4 +91,5 @@ def clean_data():
 # 3. Finally, run the app if the script is executed directly
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)
+
 
